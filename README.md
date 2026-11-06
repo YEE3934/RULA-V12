@@ -1,5 +1,5 @@
-# RULA 222.py + V12 跨視角研究整合版
+# RULA V13 完整研究測試版
 
-請先閱讀 **[README_整合版安裝與測試.md](README_整合版安裝與測試.md)**。
+`222.py` 是正式系統 V12 的完整程式加上「疑似離平面／2D 投影品質警示」及「局部人工覆核記錄」的 V13 研究功能。原始 RULA 分數不被新研究模組修改。
 
-主程式為 `222.py`，**必須一併上傳** `angle_lab_core.py` 與 `rula_cross_view_bridge.py`；保留 `timeline_component/`、`models/`、`requirements.txt`、`packages.txt`。正式分數不因 V12 研究候選角度而被覆寫。
+請先閱讀 [README_安裝與測試_V13.md](README_安裝與測試_V13.md)；**先用新的測試 GitHub Repository 部署**。

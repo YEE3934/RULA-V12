@@ -67,7 +67,11 @@ from rula_cross_view_bridge import (
 # Complexity 2 asks MediaPipe to download pose_landmark_heavy.tflite into site-packages,
 # which is typically read-only on hosted deployments.
 POSE_MODEL_COMPLEXITY = 1
-APP_BUILD_TAG = "RULA_222_CROSS_VIEW_V12_RESEARCH_2026-11-06"
+from v13_oop_review import (evaluate_case as v13_evaluate_case,
+    merge_decisions as v13_merge_decisions, audit_flags as v13_audit_flags,
+    append_audit_zip as v13_append_audit_zip, REVIEW_OPTIONS as V13_REVIEW_OPTIONS,
+    GUIDE as V13_GUIDE)
+APP_BUILD_TAG = "RULA_222_V13_OOP_QUALITY_RESEARCH_2026-11-06"
 # 既有計分矩陣沿用 RULA_VERIFIED_TABLES_FRONT_REVIEW_2026-10-30，便於追溯驗證基準。
 
 # RULA 1993/2016 標準工作表 (使用者提供論文 表3-8, 表3-9, 表3-10)
@@ -4404,6 +4408,7 @@ neck_v114_mode=v8_value('neck_v114_mode',V114_NECK_MODES[1])
 raw_image_export=v8_value('raw_export',True)
 v11_qc_policy=v8_value('v11_qc_policy',V11_QC_MODES[0])
 v12_cross_view=bool(v8_value('v12_cross_view',True))
+v13_oop_enable=bool(v8_value('v13_oop_enable',True))
 # Metadata is stored outside widgets so it survives next/previous navigation.
 v8_value('job_date', date.today())
 v8_value('job_unit', '')
@@ -4496,6 +4501,8 @@ if page == 0:
         v12_cross_view=v8_widget('checkbox','啟用每張抽樣影格的跨視角品質檢查','v12_cross_view',True)
         st.caption('僅比較同一人體側別的前臂／頸部 2D 候選角；Front 只做診斷，不能自動替換側面屈伸角。')
         st.caption('研究試算 Grand Score 另存，不會覆寫正式評分、AL、人工覆核、負重或照片結果。')
+        v13_oop_enable=v8_widget('checkbox','啟用 V13 疑似離平面／2D 投影品質初篩＋人工局部覆核紀錄','v13_oop_enable',True)
+        st.caption('V13 只能標記疑似投影品質風險，不能證明真正3D離平面；不直接剔除影格，也不自動替換正式分數。')
         st.caption('若只提供單一側面＋正面影片，無另一支側面可以替代角度；仍可查看品質警告。請確保三視角已同步且沒有鏡像。')
     st.info('未上傳正面影片：仍可完成所選側的影像角度分析；正面視角無法確定的補正請依現場資訊設定。' if factory_mode else '已提供正面影片：可輔助五項姿勢補正；下一步校正所選鏡頭的共同時間。')
 
@@ -4733,6 +4740,8 @@ if page == 3 and st.button("🚀 啟動全關節生物力學分析", type="prima
         st.session_state.v12_cross_view_summary = []
         st.session_state.v12_cross_view_candidates = []
         st.session_state.v12_cross_view_scores = []
+        st.session_state.v13_oop_rows = []
+        st.session_state.v13_oop_decisions = {}
         gc.collect()
 
         # 模型失敗只關閉 Hand 比較，不影響既有 Pose/RULA 分析。
@@ -4888,6 +4897,8 @@ if page == 3 and st.button("🚀 啟動全關節生物力學分析", type="prima
                                     {'Front':f_frame,'Right':r_frame,'Left':l_frame},pose,i+1,sec)
                                 st.session_state.v12_cross_view_summary.extend(v12_case['summary_rows'])
                                 st.session_state.v12_cross_view_candidates.extend(v12_case['candidate_rows'])
+                                if v13_oop_enable:
+                                    st.session_state.v13_oop_rows.extend(v13_evaluate_case(v12_case,i+1,sec))
                             except Exception as v12_err:
                                 logging.exception('V12 cross-view research diagnostics failed')
                                 st.session_state.v12_cross_view_summary.append({
@@ -5322,6 +5333,8 @@ if page == 3 and st.button("🚀 啟動全關節生物力學分析", type="prima
                                     row for row in v12_case['summary_rows'] if row.get('評估側')==target_side)
                                 st.session_state.v12_cross_view_candidates.extend(
                                     row for row in v12_case['candidate_rows'] if row.get('body_side')==target_side)
+                                if v13_oop_enable:
+                                    st.session_state.v13_oop_rows.extend(v13_evaluate_case(v12_case,i+1,sec,(target_side,)))
                             except Exception as v12_err:
                                 logging.exception('V12 cross-view research diagnostics failed')
                                 st.session_state.v12_cross_view_summary.append({
@@ -5973,7 +5986,7 @@ if st.session_state.v9_screen == 'results':
                     st.warning('目前這個報表沒有可用資料，請查看其他類型。')
         if tab_cross_view.open:
             with tab_cross_view:
-                st.subheader('V12｜三視角角度品質與 RULA 研究試算')
+                st.subheader('V12／V13｜三視角角度品質、疑似離平面篩檢與局部覆核')
                 st.info('此分頁的候選角度、品質分數和研究試算 Grand Score 均非正式評分；既有 RULA 分數及人工覆核不被覆寫。')
                 v12_rows=pd.DataFrame(st.session_state.get('v12_cross_view_summary',[]))
                 v12_candidates=pd.DataFrame(st.session_state.get('v12_cross_view_candidates',[]))
@@ -6015,6 +6028,61 @@ if st.session_state.v9_screen == 'results':
                             st.markdown('#### 研究試算與原角度對照')
                             st.dataframe(study_data[present],use_container_width=True,hide_index=True)
                     st.caption('下載報告 ZIP 後，請查看「技術診斷/V12_Cross_View_Summary.csv」、「V12_Cross_View_All_Candidates.csv」與「V12_Research_Score_Comparison.csv」；研究試算不會覆寫正式 RULA 分數。')
+        if tab_cross_view.open:
+            with tab_cross_view:
+                st.divider()
+                st.subheader('V13｜疑似離平面與量角品質警示（人工確認）')
+                st.caption('不等於已辨識真實3D離平面。只用可見度、肩線投影、肢段比例、同側關節跨鏡頭差異等線索初篩；正式RULA分數不修改。')
+                v13_df=v13_audit_flags(v13_merge_decisions(
+                    st.session_state.get('v13_oop_rows',[]),
+                    st.session_state.get('v13_oop_decisions',{})))
+                if v13_df.empty:
+                    st.info('沒有V13品質資料；分析前請勾選V12與V13研究功能並重新分析。')
+                else:
+                    suspicious=v13_df['品質狀態'].astype(str).str.startswith('疑似')
+                    reviewed=int(v13_df['人工已覆核'].sum())
+                    a,b,c=st.columns(3)
+                    a.metric('疑似品質異常部位',int(suspicious.sum()))
+                    b.metric('已人工覆核部位',reviewed)
+                    c.metric('全部部位／影格側別紀錄',len(v13_df))
+                    st.caption('這裡統計的是「部位×評估側」筆數，不是獨立影格數；沒有警示並不等於角度準確。')
+                    view_df=v13_df.loc[suspicious].copy() if suspicious.any() else v13_df.copy()
+                    st.dataframe(view_df[['樣本編號','時間(秒)','評估側','部位','品質狀態','可能原因',
+                        '原側面研究候選角度','替代側面候選角度','正面候選角度(僅診斷)','人工處理']],
+                        use_container_width=True,hide_index=True)
+                    st.markdown('#### 局部人工確認｜只修正品質狀態，不覆寫正式RULA分數')
+                    keys=[(int(x['樣本編號']),str(x['評估側']),str(x['部位'])) for _,x in view_df.iterrows()]
+                    chosen=st.selectbox('選擇樣本／人體側別／部位',keys,
+                        format_func=lambda k:f'第{k[0]}張｜{k[1]}｜{k[2]}',key='v13_review_key')
+                    rec=v13_df.loc[(v13_df['樣本編號']==chosen[0]) &
+                        (v13_df['評估側']==chosen[1]) & (v13_df['部位']==chosen[2])].iloc[0]
+                    st.info('警示依據：'+str(rec['可能原因']))
+                    saved=st.session_state.get('v13_oop_decisions',{}).get(chosen,{})
+                    default_action=saved.get('人工處理','未審核')
+                    with st.form('v13_review_form'):
+                        action=st.selectbox('人工確認結果',V13_REVIEW_OPTIONS,
+                            index=V13_REVIEW_OPTIONS.index(default_action) if default_action in V13_REVIEW_OPTIONS else 0)
+                        manual_deg=st.text_input('人工確認角度（選填；沒有可靠角度請留空）',
+                            value=str(saved.get('人工採用角度(度)','')) if saved.get('人工採用角度(度)') not in ('',None) and pd.notna(saved.get('人工採用角度(度)')) else '')
+                        memo=st.text_area('人工判斷依據／補充備註（例如第18張三鏡頭都無可靠角度）',
+                            value=str(saved.get('人工確認備註','')))
+                        submit=st.form_submit_button('保存這筆品質覆核紀錄')
+                    if submit:
+                        try:
+                            deg=float(manual_deg) if manual_deg.strip() else float('nan')
+                            if pd.notna(deg) and not 0<=deg<=180:
+                                raise ValueError('角度必須介於0至180度')
+                            if action.startswith('無可靠角度') and pd.notna(deg):
+                                raise ValueError('已判斷無可靠角度，不應同時輸入有效角度')
+                            st.session_state.v13_oop_decisions[chosen]={
+                                '人工處理':action,'人工採用角度(度)':deg,'人工確認備註':memo}
+                            st.success('已保存V13局部人工品質判斷；下載報告ZIP會附上這筆紀錄。')
+                        except ValueError as exc:
+                            st.error(str(exc))
+                    st.caption('若仍能確認RULA姿勢區間，選「無可靠角度；仍可判RULA分級」；若連分級都不能確認，請選「RULA分級也無法確認」。兩者不等於剔除整張影格。')
+                    st.download_button('📥 單獨下載 V13 品質與人工覆核 CSV',
+                        data=v13_df.to_csv(index=False).encode('utf-8-sig'),
+                        file_name='V13_疑似離平面與局部人工覆核.csv',mime='text/csv')
         if tab_download.open:
             with tab_download:
                 st.subheader('下載評估資料')
@@ -6044,6 +6112,9 @@ if st.session_state.v9_screen == 'results':
                             st.session_state.get('batch_profiles',{}),st.session_state.get('batch_confirmed',set())),
                         work_conditions=st.session_state.get('v8_values',{}),
                         )
+                    if st.session_state.get('v13_oop_rows'):
+                        finalized=v13_append_audit_zip(finalized,
+                            st.session_state.v13_oop_rows,st.session_state.get('v13_oop_decisions',{}))
                     render_blob_download_button(finalized,st.session_state.zip_filename,
                                                 f'📥 下載 {mode_now} 原始＋複核後報表 ZIP')
                 st.caption('ZIP 的「原始分析」保留首次系統計算結果；「複核後結果」包含沿用設定的系統初始與人工修正結果，並標明來源。未經人工驗證不應稱為準確率。')
